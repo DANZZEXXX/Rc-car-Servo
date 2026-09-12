@@ -1,0 +1,93 @@
+// ==========================================
+// KODE ESP32 (REMOTE CONTROLLER)
+// ==========================================
+
+// Pin Joystick Kiri (RC Jalan)
+#define JOY_L_X  32
+#define JOY_L_Y  33
+#define JOY_L_SW 26
+
+// Pin Joystick Kanan (Capit)
+#define JOY_R_X  34
+#define JOY_R_Y  35
+#define JOY_R_SW 25
+
+int posS3  = 90; // Kanan/Kiri
+int posS5  = 90; // Atas/Bawah
+int posS11 = 90; // Maju/Mundur
+int posS10 = 0;  // Capit (0=Buka, 90=Tutup)
+
+bool isCapitClosed = false;
+bool lastRightBtn = HIGH;
+
+void setup() {
+  Serial.begin(9600); // Baudrate untuk HC-06
+
+  pinMode(JOY_L_SW, INPUT_PULLUP);
+  pinMode(JOY_R_SW, INPUT_PULLUP);
+}
+
+void loop() {
+  int centerVal = 2048;
+  int deadzone  = 800;
+  int speedServo = 2; 
+
+  int xLeft  = analogRead(JOY_L_X);
+  int yLeft  = analogRead(JOY_L_Y);
+  int xRight = analogRead(JOY_R_X);
+  int yRight = analogRead(JOY_R_Y);
+
+  bool leftBtn  = (digitalRead(JOY_L_SW) == LOW);
+  bool rightBtn = (digitalRead(JOY_R_SW) == LOW);
+
+  // --- 1. RESET KE TENGAH (TEKAN KEDUA JOYSTICK) ---
+  if (leftBtn && rightBtn) {
+    posS3 = 90; posS5 = 90; posS11 = 90;
+    delay(500); 
+  } 
+  else {
+    // --- 2. KONTROL CAPIT INKREMENTAL ---
+    if (xRight > centerVal + deadzone) posS3 += speedServo;
+    if (xRight < centerVal - deadzone) posS3 -= speedServo;
+
+    // Sinkron Maju + Ke Bawah
+    if (yRight > centerVal + deadzone) {
+      posS11 += speedServo; posS5 -= speedServo;
+    }
+    // Sinkron Mundur + Ke Atas
+    if (yRight < centerVal - deadzone) {
+      posS11 -= speedServo; posS5 += speedServo;
+    }
+
+    // --- 3. FITUR NYAPIT (KLIK JOYSTICK KANAN) ---
+    if (rightBtn && !lastRightBtn) {
+      isCapitClosed = !isCapitClosed;
+      posS10 = isCapitClosed ? 90 : 0;
+      delay(200); 
+    }
+  }
+  lastRightBtn = rightBtn;
+
+  posS3  = constrain(posS3, 0, 180);
+  posS5  = constrain(posS5, 0, 180);
+  posS11 = constrain(posS11, 0, 180);
+
+  // --- 4. KONTROL RC JALAN JADI HURUF (F, B, L, R, S) ---
+  char rcCmd = 'S'; // Default Berhenti (Stop)
+  
+  if (yLeft > centerVal + deadzone) rcCmd = 'F';      // Maju (Forward)
+  else if (yLeft < centerVal - deadzone) rcCmd = 'B'; // Mundur (Backward)
+  else if (xLeft > centerVal + deadzone) rcCmd = 'R'; // Kanan (Right)
+  else if (xLeft < centerVal - deadzone) rcCmd = 'L'; // Kiri (Left)
+
+  // --- 5. KIRIM DATA KE ARDUINO (Via Bluetooth HC-06) ---
+  Serial.print("<");
+  Serial.print(rcCmd);  Serial.print(",");
+  Serial.print(posS3);  Serial.print(",");
+  Serial.print(posS5);  Serial.print(",");
+  Serial.print(posS11); Serial.print(",");
+  Serial.print(posS10);
+  Serial.println(">");
+
+  delay(20); 
+}
